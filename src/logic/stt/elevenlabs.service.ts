@@ -29,8 +29,10 @@ export class ElevenLabsService {
         });
         
         //console.log('Connection established, setting up event listeners...');
-        connection.on(RealtimeEvents.SESSION_STARTED, (data) => {
-            onEvent({ type: 'session-started', text: data as string });
+        connection.on(RealtimeEvents.SESSION_STARTED, (data: any) => {
+            // SessionStartedMessage might be an object, convert to string safely
+            const text = typeof data === 'string' ? data : (data?.message || data?.text || JSON.stringify(data) || 'Session started');
+            onEvent({ type: 'session-started', text });
         });
 
         connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, (data: any) => {
@@ -154,7 +156,7 @@ export class ElevenLabsService {
         // Clean up old voice files (older than 1 hour)
 
         // Generate URL for the frontend
-        return "http://localhost:4000/voice/"+filename;
+        return this.configService.get('BASE_URL')+"/voice/"+filename;
 
     }
 }
