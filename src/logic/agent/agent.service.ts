@@ -157,10 +157,10 @@ export class AgentService {
       ? await this.conversationService.getConversation(updatedConversation.id)
       : await this.conversationService.getConversation(conversation.id);
 
-    const audioPath = 'http://localhost:4000/voice/voice_1764709916703.mp3'; //await this.elevenlabsService.generateAudio(finalAnswer);
+    const audioPath = await this.elevenlabsService.generateAudio(finalAnswer)//'http://localhost:4000/voice/voice_1764709916703.mp3';
     
     return {
-      answer: finalAnswer,
+      answer: finalAnswer, 
       conversation: refreshedConversation,
       results: contextUpdates,
       audioPath
