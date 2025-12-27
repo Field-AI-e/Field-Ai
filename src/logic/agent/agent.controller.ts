@@ -3,13 +3,18 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { AgentService } from './agent.service';
 import { ImageService } from './image.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-
+import { ElevenLabsService } from '../stt/elevenlabs.service';
 @Controller('agent')
 export class AgentController {
     constructor(
         private readonly agentService: AgentService,
         private readonly imageService: ImageService,
+        private readonly elevenlabsService: ElevenLabsService,
     ) { }
+    @Post('generate-audio')
+    async generateAudio(@Body() body: { text: string }) {
+        return this.elevenlabsService.generateAudio(body.text);
+    }
     @UseGuards(JwtAuthGuard)
     @Post('plan')
     async plan(@Body() body: { message: string, conversationId?: number, artifactId?: string, sources?: string[] }, @Request() req) {
