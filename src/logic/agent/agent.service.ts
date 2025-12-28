@@ -46,7 +46,7 @@ export class AgentService {
     // Process images if sources are provided
     let visionResult = null;
     const imageArtifactIds: string[] = sources || [];
-    
+    this.geminiService.initiateThinking(userId);
     if (imageArtifactIds.length > 0) {
       // Process the first image for vision analysis
       const firstArtifactId = imageArtifactIds[0];
@@ -70,19 +70,20 @@ export class AgentService {
     }
     
     const originalLanguage =
-      await this.geminiService.detectLanguage(message);
+      await this.geminiService.detectLanguage(message, user.id);
     let englishQuery = message;
     if (originalLanguage !== 'en') {
       englishQuery = await this.geminiService.translateText(
         message,
         originalLanguage,
         'en',
+        user.id,
       );
     }
 
     // Step 1: Detect intent using Gemini (with conversation history for context)
     // Note: We detect intent BEFORE saving the current message so history excludes it
-    const intent = await this.detectIntent(englishQuery, conversation.contextFrame, conversation.id);
+    const intent = await this.detectIntent(englishQuery, conversation.contextFrame, conversation.id, user.id);
     // Save user message
     const saveMessage: Message = {
       id: 0,
@@ -118,7 +119,7 @@ export class AgentService {
     };
 
     const answerPrompt = generateAnswerPrompt(englishQuery, intent, state, dataResults);
-    const answerResponse = await this.geminiService.generateContent(answerPrompt);
+    const answerResponse = await this.geminiService.generateContentStream(answerPrompt, user.id);
     let englishAnswer = answerResponse.text?.trim() || 'Sorry, I could not generate an answer.';
 
     // Translate back to the user's original language when needed
@@ -128,6 +129,7 @@ export class AgentService {
         englishAnswer,
         'en',
         originalLanguage,
+        user.id,
       );
     }
 
@@ -151,7 +153,8 @@ export class AgentService {
     // Generate and update title if conversation doesn't have one
     const updatedConversation = await this.conversationService.generateAndUpdateTitle(
       conversation.id,
-      savedUserMessage.content
+      savedUserMessage.content,
+      user.id
     );
     const refreshedConversation = updatedConversation 
       ? await this.conversationService.getConversation(updatedConversation.id)
@@ -170,7 +173,7 @@ export class AgentService {
   /**
    * Detect intent from user query using Gemini with conversation history for context
    */
-  private async detectIntent(query: string, contextFrame: any, conversationId: number): Promise<any> {
+  private async detectIntent(query: string, contextFrame: any, conversationId: number, userId: number): Promise<any> {
     // Get last 10 messages for context
     const messages = await this.conversationService.getRecentHistoryAsc(conversationId, 10);
     
@@ -189,7 +192,8 @@ export class AgentService {
     const prompt = `${CLASSIFIER_PROMPT}${historyText}\n\nCURRENT USER QUERY: "${query}"${contextHint ? `\n\nCONTEXT: ${contextHint}` : ''}\n\nReturn ONLY valid JSON:`;
     
     try {
-      const response = await this.geminiService.generateContent(prompt);
+      const response = await this.geminiService.generateContentStream(prompt, userId);
+      console.log("response",response);
       const jsonText = response.text?.trim() || '{}';
       // Remove any markdown code blocks if present
       const cleanedJson = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -226,6 +230,7 @@ export class AgentService {
   ): Promise<any> {
     const conversationContext = conversation.contextFrame || {};
     const dataResults: any = {};
+    console.log(intent);
 
     // Handle vision/image data
     if (intent.needs.image && visionResult) {

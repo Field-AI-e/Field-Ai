@@ -86,7 +86,7 @@ export class ConversationService {
         return this.messageRepository.save({ ...message, conversation: { id: conversationId } });
     }
 
-    async generateAndUpdateTitle(conversationId: number, firstMessageContent: string): Promise<Conversation | null> {
+    async generateAndUpdateTitle(conversationId: number, firstMessageContent: string, userId: number): Promise<Conversation | null> {
         const conversation = await this.chatRepository.findOne({ where: { id: conversationId } });
         if (conversation && (!conversation.title || conversation.title.trim() === '')) {
             try {
@@ -105,7 +105,7 @@ export class ConversationService {
                     .join('\n');
 
                 const titlePrompt = `Based on the following conversation, generate a concise title (maximum 60 characters) that summarizes the main topic or question. Return only the title, nothing else.\n\nConversation:\n${conversationText}`;
-                const result = await this.geminiService.generateContent(titlePrompt);
+                const result = await this.geminiService.generateContentStream(titlePrompt, userId);
                 const generatedTitle = result.text?.trim();
 
                 if (generatedTitle) {

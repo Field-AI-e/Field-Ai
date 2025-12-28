@@ -1,17 +1,25 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import { Message } from 'src/entities/messages.entity';
 import { Role } from 'src/utils/Role';
 import * as fs from 'fs';
+import { SttGateway } from '../stt/stt.gateway';
 @Injectable()
 export class GeminiServiceService {
+  initiateThinking(userId: number) {
+    this.sttGateway.sendThinking(userId, 'Generating plan...');
+  }
   private genAI: GoogleGenAI;
   private embedModel: any;
   private chatModel: any;
   private EMBED_MODEL: string;
   private CHAT_MODEL: string;
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(forwardRef(() => SttGateway))
+    private readonly sttGateway: SttGateway,
+  ) {
     this.initGemini(configService);
   }
 
@@ -27,7 +35,7 @@ export class GeminiServiceService {
     this.EMBED_MODEL = EMBED_MODEL;
     this.CHAT_MODEL = CHAT_MODEL;
   }
-  async detectLanguage(text: string): Promise<string> {
+  async detectLanguage(text: string, userId: number): Promise<string> {
     try {
       const prompt = `Detect the language of this text and return only the ISO 639-1 language code. 
 
@@ -41,7 +49,7 @@ Text: "${text}"
 
 Language code:`;
 
-      const result = await this.generateContent(prompt);
+      const result = await this.generateContentStream(prompt, userId);
       const languageCode = result.text?.trim().toLowerCase() || 'en';
 
 
@@ -154,6 +162,7 @@ Language code:`;
     text: string,
     fromLanguage: string,
     toLanguage: string,
+    userId: number,
   ): Promise<string> {
     try {
       if (fromLanguage === toLanguage) {
@@ -172,7 +181,7 @@ Text: "${text}"
 
 Translation:`;
 
-      const result = await this.generateContent(prompt);
+      const result = await this.generateContentStream(prompt, userId);
       const translatedText = result.text?.trim() || text;
 
       return translatedText;
@@ -203,8 +212,52 @@ Translation:`;
     }
   }
 
-  async generateContent(
+  // async generateContent(
+  //   prompt: string | any[],
+  //   systemPrompt?: string,
+  // ): Promise<any> {
+  //   try {
+  //     let contents;
+
+  //     if (Array.isArray(prompt)) {
+  //       // If prompt is already an array of messages, use it directly
+  //       contents = prompt;
+  //     } else {
+  //       // If prompt is a string, create a simple user message
+  //       contents = [{ role: 'user', content: prompt }];
+  //     }
+
+  //     // Handle system prompt by prepending it to the user message
+  //     if (systemPrompt) {
+  //       // Find the first user message and prepend system prompt
+  //       contents = [{ role: 'model', content: systemPrompt }, ...contents];
+  //     }
+
+  //     // Convert to the format expected by Google GenAI
+  //     const formattedContents = contents.map((msg) => ({
+  //       role: msg.role === 'system' ? 'user' : msg.role, // Convert system to user
+  //       parts: [{ text: msg.content }],
+  //     }));
+
+  //     // return formattedContents;
+
+  //     const result = await this.genAI.models.generateContent({
+  //       contents: formattedContents,
+  //       model: this.CHAT_MODEL,
+  //       config: { temperature: 0.3 },
+  //     });
+  //     return result;
+  //   } catch (error) {
+  //     console.error('Error generating content:', error);
+  //     throw new Error(`Failed to generate content: ${error.message}`);
+  //   }
+  // }
+
+
+  async generateContentStream(
     prompt: string | any[],
+    userId: number,
+
     systemPrompt?: string,
   ): Promise<any> {
     try {
@@ -232,65 +285,90 @@ Translation:`;
 
       // return formattedContents;
 
-      const result = await this.genAI.models.generateContent({
+      const stream = await this.genAI.models.generateContentStream({
         contents: formattedContents,
         model: this.CHAT_MODEL,
-        config: { temperature: 0.3 },
+        config: {
+          temperature: 0.3,
+          thinkingConfig: {
+            includeThoughts: true,
+            // Optional: thinkingLevel: "high" (for Gemini 3)
+          }
+        },
       });
-      return result;
+      
+      let resultData = "";
+      for await (const chunk of stream) {
+        if (chunk?.candidates?.[0]?.content?.parts) {
+          const parts = chunk.candidates[0].content.parts;
+          for (const part of parts) {
+            if (part.thought) {
+              // This is a thinking token - emit it via WebSocket if needed
+              console.log('Thinking:', part.text);
+              this.sttGateway.sendThinking(userId, part.text);
+              // You can emit this to the frontend via sttGateway if needed
+              // this.sttGateway.server?.emit('thinking', { userId, text: part.text }); 
+            } else if (part.text) {
+              resultData += part.text;
+            }
+          }
+        } 
+      }
+      
+      return { text: resultData };
     } catch (error) {
       console.error('Error generating content:', error);
       throw new Error(`Failed to generate content: ${error.message}`);
     }
   }
 
-  async complete(
-    system: string,
-    user: string | any,
-    history: Message[],
-    temperature = 0.2,
-    conversationState?: any,
-  ): Promise<any> {
-    // Gemini doesn’t have a true 'system' role. Put it in a preamble (first user turn).
-    const preamble = system?.trim() ? `${system.trim()}\n\n` : '';
-    let hist = [];
-    // Map your history roles to Gemini roles: assistant -> 'model'
-    if (conversationState) {
-      hist = history.map((m) => ({
-        role:
-          m.role === (Role.ASSISTANT || m.role === Role.SYSTEM)
-            ? 'model'
-            : 'user',
-        parts: [{ text: m.content }],
-      }));
-    }
-    if (conversationState) {
-      hist.push({ role: 'user', parts: [{ text: JSON.stringify(conversationState, null, 2) }] });
-    }
+  // async complete(
+  //   system: string,
+  //   user: string | any,
+  //   history: Message[],
+  //   temperature = 0.2,
+  //   conversationState?: any,
+  // ): Promise<any> {
+  //   // Gemini doesn’t have a true 'system' role. Put it in a preamble (first user turn).
+  //   const preamble = system?.trim() ? `${system.trim()}\n\n` : '';
+  //   let hist = [];
+  //   // Map your history roles to Gemini roles: assistant -> 'model'
+  //   if (conversationState) {
+  //     hist = history.map((m) => ({
+  //       role:
+  //         m.role === (Role.ASSISTANT || m.role === Role.SYSTEM)
+  //           ? 'model'
+  //           : 'user',
+  //       parts: [{ text: m.content }],
+  //     }));
+  //   }
+  //   if (conversationState) {
+  //     hist.push({ role: 'user', parts: [{ text: JSON.stringify(conversationState, null, 2) }] });
+  //   }
 
-    // console.dir([
-    //   // system-as-preamble in first turn (user role)
-    //   ...(preamble ? [{ role: 'user', parts: [{ text: preamble }] }] : []),
-    //   ...hist,
-    //   { role: 'user', parts: [{ text: user }] },
-    // ], { depth: null });
-    try {
-      const result = await this.genAI.models.generateContent({
-        model: this.CHAT_MODEL,
-        config: { temperature },
-        contents: [
-          // system-as-preamble in first turn (user role)
-          ...(preamble ? [{ role: 'user', parts: [{ text: preamble }] }] : []),
-          ...hist,
-          { role: 'user', parts: [{ text: user }] },
-        ],
-      });
-      return result;
-    } catch (err: any) {
-      console.error('complete error:', err?.message || err);
-      throw new Error(`Failed to generate content: ${err?.message || err}`);
-    }
-  }
+  //   // console.dir([
+  //   //   // system-as-preamble in first turn (user role)
+  //   //   ...(preamble ? [{ role: 'user', parts: [{ text: preamble }] }] : []),
+  //   //   ...hist,
+  //   //   { role: 'user', parts: [{ text: user }] },
+  //   // ], { depth: null });
+  //   try {
+  //     const result = await this.genAI.models.generateContent({
+  //       model: this.CHAT_MODEL,
+  //       config: { temperature },
+  //       contents: [
+  //         // system-as-preamble in first turn (user role)
+  //         ...(preamble ? [{ role: 'user', parts: [{ text: preamble }] }] : []),
+  //         ...hist,
+  //         { role: 'user', parts: [{ text: user }] },
+  //       ],
+  //     });
+  //     return result;
+  //   } catch (err: any) {
+  //     console.error('complete error:', err?.message || err);
+  //     throw new Error(`Failed to generate content: ${err?.message || err}`);
+  //   }
+  // }
   async handleDetectImageDisease(imageUrl: string, crops: any[], diseases: any[]) {
 
 
