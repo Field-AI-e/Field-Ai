@@ -17,14 +17,14 @@ export class AgentController {
     }
     @UseGuards(JwtAuthGuard)
     @Post('plan')
-    async plan(@Body() body: { message: string, conversationId?: number, artifactId?: string, sources?: string[] }, @Request() req) {
+    async plan(@Body() body: { message: string, conversationId?: number, artifactId?: string, sources?: string[],isVoiceMode }, @Request() req) {
         const { user } = req;
         if (!user || !user.id) {
             throw new Error('User not found in request');
         } 
         // Support both artifactId (legacy) and sources (new)
         const sources = body.sources || (body.artifactId ? [body.artifactId] : []);
-        return this.agentService.plan(body.message, user.id, body.conversationId, sources);
+        return this.agentService.plan(body.message, user.id, body.conversationId, sources,body.isVoiceMode);
     }
 
     @UseGuards(JwtAuthGuard)
@@ -43,8 +43,6 @@ export class AgentController {
             throw new Error('No file uploaded');
         }
         const { artifactId, imageUrl } = await this.imageService.uploadImage(file, user, body.conversationId);
-        console.log('artifactId', artifactId);
-        console.log('imageUrl', imageUrl);
         return { artifactId, imageUrl };
     }
     @UseGuards(JwtAuthGuard)

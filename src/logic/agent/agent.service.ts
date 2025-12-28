@@ -32,10 +32,9 @@ export class AgentService {
     private readonly pestsService: PestsService,
     private readonly imageService: ImageService,
   ) {
-    console.log('contextDir', this.contextDir);
   }
 
-  async plan(message: string, userId: number, conversationId?: number, sources?: string[]) {
+  async plan(message: string, userId: number, conversationId?: number, sources?: string[],isVoiceMode?: boolean) {
     const user = await this.authService.getProfile(userId);
     let conversation =
       await this.conversationService.ensureConversation(
@@ -50,14 +49,11 @@ export class AgentService {
     if (imageArtifactIds.length > 0) {
       // Process the first image for vision analysis
       const firstArtifactId = imageArtifactIds[0];
-      console.log('Processing image with artifactId:', firstArtifactId);
       const localPath = await this.imageService.getImageLocalPath(firstArtifactId);
       if (!localPath) {
         throw new Error(`Image not found for artifactId: ${firstArtifactId}`);
       }
-      console.log('Image local path:', localPath);
       visionResult = await this.runVision(localPath);
-      console.log('Vision result:', visionResult);
       
       // Save vision results to conversation context
       await this.updateConversationContext(conversation.id, [{
@@ -106,7 +102,6 @@ export class AgentService {
     if (imageArtifactIds.length > 0) {
       await this.imageService.linkImagesToMessage(imageArtifactIds, savedUserMessage.id);
     }
-    console.log('Detected intent:', intent);
 
     // Step 2: Fetch required data based on intent
     const dataResults = await this.fetchDataForIntent(intent, user as User, conversation, visionResult);
@@ -160,7 +155,7 @@ export class AgentService {
       ? await this.conversationService.getConversation(updatedConversation.id)
       : await this.conversationService.getConversation(conversation.id);
 
-    const audioPath = await this.elevenlabsService.generateAudio(finalAnswer)//'http://localhost:4000/voice/voice_1764709916703.mp3';
+    const audioPath = isVoiceMode ? await this.elevenlabsService.generateAudio(finalAnswer) : null;//'http://localhost:4000/voice/voice_1764709916703.mp3';
     
     return {
       answer: finalAnswer, 
@@ -193,7 +188,6 @@ export class AgentService {
     
     try {
       const response = await this.geminiService.generateContentStream(prompt, userId);
-      console.log("response",response);
       const jsonText = response.text?.trim() || '{}';
       // Remove any markdown code blocks if present
       const cleanedJson = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -230,7 +224,6 @@ export class AgentService {
   ): Promise<any> {
     const conversationContext = conversation.contextFrame || {};
     const dataResults: any = {};
-    console.log(intent);
 
     // Handle vision/image data
     if (intent.needs.image && visionResult) {

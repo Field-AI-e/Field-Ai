@@ -304,7 +304,6 @@ Translation:`;
           for (const part of parts) {
             if (part.thought) {
               // This is a thinking token - emit it via WebSocket if needed
-              console.log('Thinking:', part.text);
               this.sttGateway.sendThinking(userId, part.text);
               // You can emit this to the frontend via sttGateway if needed
               // this.sttGateway.server?.emit('thinking', { userId, text: part.text }); 
@@ -431,10 +430,8 @@ Translation:`;
 
     const raw = r.candidates[0].content.parts[0].text;
     const rawGuard = raw.replace('```json', '').replace('```', '').trim();
-    console.log(rawGuard);
     const result = JSON.parse(rawGuard);
 
-    console.log(result);
     return result;
   }
 }

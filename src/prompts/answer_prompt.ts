@@ -24,6 +24,7 @@ CRITICAL RULES:
 - Use simple farmer-friendly language.
 - Do NOT mention AI tools, models, or reasoning.
 - Make the max number of words 100.
+-Always try to keep the conversation going. You can ask followup questions of the product or of the context
     `;
     return prompt;
 }
