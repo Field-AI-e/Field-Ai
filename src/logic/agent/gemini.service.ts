@@ -25,7 +25,7 @@ export class GeminiServiceService {
 
   async initGemini(configService: ConfigService) {
     const EMBED_MODEL =
-      configService.get('GEMINI_EMBED_MODEL') || 'text-embedding-004';
+      configService.get('GEMINI_EMBED_MODEL') || 'gemini-embedding-001';
     const CHAT_MODEL =
       configService.get('GEMINI_CHAT_MODEL') || 'gemini-2.5-flash';
 
@@ -197,6 +197,9 @@ Translation:`;
       const result = await this.genAI.models.embedContent({
         contents: texts,
         model: this.EMBED_MODEL,
+        config: {
+          outputDimensionality: 768,
+        },
       });
       // Ensure we only return arrays of numbers, filter out undefined
       if (!result.embeddings) {
